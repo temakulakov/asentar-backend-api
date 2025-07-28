@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 
 import { AxiosResponse, isAxiosError } from 'axios';
-import { UserCreateResDto } from './dto/response/user-create-res.dto';
+
 import { CreateUserIntegrationReqDto } from './dto/integration/user-create.integration.req.dto';
 import { CreateUserIntegrationResDto } from './dto/integration/user-create.integration.res.dto';
 import { MarzbanErrorDto } from './dto/integration/user.errors.integration.res';

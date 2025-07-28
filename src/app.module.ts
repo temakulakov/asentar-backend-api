@@ -2,7 +2,10 @@ import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { MarzbanModule } from './marzban/marzban.module';
-import {ConfigModule} from "@nestjs/config";
+import { UsersModule } from './users/users.module';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -10,7 +13,24 @@ import {ConfigModule} from "@nestjs/config";
       isGlobal: true,
       envFilePath: '.env', // или массив для среды: ['.env.local','.env']
     }),
-    MarzbanModule],
+    TypeOrmModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (cfg: ConfigService) => ({
+        type: 'mysql' as const,
+        host: cfg.get<string>('DB_HOST'),
+        port: cfg.get<number>('DB_PORT'),
+        username: cfg.get<string>('DB_USER'),
+        password: cfg.get<string>('DB_PASS'),
+        database: cfg.get<string>('DB_NAME'),
+        entities: [__dirname + '/**/*.entity.{ts,js}'],
+        synchronize: true, // ⚠️ disable in prod
+      }),
+      inject: [ConfigService],
+    }),
+    MarzbanModule,
+    UsersModule,
+    PaymentsModule,
+  ],
   controllers: [AppController],
   providers: [AppService],
 })
