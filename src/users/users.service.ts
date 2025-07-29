@@ -5,7 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-
+import { add } from 'date-fns';
 import { Repository } from 'typeorm';
 import { MarzbanService } from '../marzban/marzban.service';
 
@@ -16,6 +16,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { FixedInboundsDto } from '../marzban/dto/integration/user-create.integration.req.dto';
 import { ModifyUserIntegrationReqDto } from '../marzban/dto/integration/user-modify.integration.req.dto';
 import { BaseUserDto } from '../marzban/dto/base/user-base.dto';
+import { PaymentPeriod } from '../payments/enums/payment-period.enum';
 
 @Injectable()
 export class UsersService {
@@ -68,6 +69,41 @@ export class UsersService {
     const u = await this.repo.findOne({ where: { username } });
     if (!u) throw new NotFoundException(`User ${username} not found`);
     return u;
+  }
+
+  async extendExpire(username: string, period: PaymentPeriod): Promise<void> {
+    const user = await this.repo.findOne({ where: { username } });
+    if (!user) throw new NotFoundException(`User ${username} not found`);
+
+    // вычисляем новую дату
+    const now = user.expireDate > new Date() ? user.expireDate : new Date();
+    const next = (() => {
+      switch (period) {
+        case PaymentPeriod.DAY:
+          return add(now, { days: 1 });
+        case PaymentPeriod.WEEK:
+          return add(now, { weeks: 1 });
+        case PaymentPeriod.MONTH:
+          return add(now, { months: 1 });
+        case PaymentPeriod.QUARTER:
+          return add(now, { months: 3 });
+        case PaymentPeriod.SEMIANNUAL:
+          return add(now, { months: 6 });
+        case PaymentPeriod.ANNUAL:
+          return add(now, { years: 1 });
+        default:
+          return now;
+      }
+    })();
+
+    // синхронизируем с Marzban
+    await this.marzban.update(username, {
+      expire: Math.floor(next.getTime() / 1000),
+    });
+
+    // сохраняем локально
+    user.expireDate = next;
+    await this.repo.save(user);
   }
 
   async update(username: string, dto: UpdateUserDto): Promise<User> {

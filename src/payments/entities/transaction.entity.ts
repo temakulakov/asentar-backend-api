@@ -1,32 +1,57 @@
+// src/payments/entities/transaction.entity.ts
 import {
   Entity,
-  Column,
   PrimaryGeneratedColumn,
-  ManyToOne,
+  Column,
   CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  JoinColumn,
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
+import { PaymentPeriod } from '../enums/payment-period.enum';
+import { TransactionStatus } from '../enums/transaction-status.enum';
 
 @Entity({ name: 'transactions' })
 export class Transaction {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  @ManyToOne(() => User, (user) => user.transactions)
+  /** Внешний ключ к таблице users.username */
+  @ManyToOne(() => User, (user) => user.transactions, { onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'user_username', referencedColumnName: 'username' })
   user: User;
 
-  @Column('int')
-  amount: number; // сумма в копейках или рублях
+  /** Сумма платежа */
+  @Column('decimal', { precision: 10, scale: 2 })
+  amount: number;
 
-  @Column('varchar', { length: 50 })
+  /** Валюта (например, 'RUB', 'USD') */
+  @Column('varchar', { length: 3 })
   currency: string;
 
-  @Column('varchar', { length: 100 })
-  status: string;
+  /** Период подписки, на который оплачено */
+  @Column({
+    type: 'enum',
+    enum: PaymentPeriod,
+  })
+  period: PaymentPeriod;
 
+  /** Дополнительные данные или метаданные */
   @Column('simple-json', { nullable: true })
-  metadata: any;
+  metadata: Record<string, any> | null;
+
+  /** Статус транзакции (Pending, Completed, Failed и т.д.) */
+  @Column({
+    type: 'enum',
+    enum: TransactionStatus,
+    default: TransactionStatus.PENDING,
+  })
+  status: TransactionStatus;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;
+
+  @UpdateDateColumn({ name: 'updated_at' })
+  updatedAt: Date;
 }

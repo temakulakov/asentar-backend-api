@@ -5,6 +5,7 @@ import { MarzbanModule } from './marzban/marzban.module';
 import { UsersModule } from './users/users.module';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { PaymentsModule } from './payments/payments.module';
 
 @Module({
@@ -29,6 +30,7 @@ import { PaymentsModule } from './payments/payments.module';
     }),
     MarzbanModule,
     UsersModule,
+    EventEmitterModule.forRoot(),
     PaymentsModule,
   ],
   controllers: [AppController],

@@ -12,13 +12,11 @@ import { Transaction } from '../../payments/entities/transaction.entity';
 
 @Entity({ name: 'users' })
 export class User {
-  @Column('uuid')
-  vless: string;
-
-  @PrimaryColumn('uuid', { unique: true })
+  @PrimaryColumn('uuid')
   username: string;
 
-  /** --- Telegram User --- **/
+  @Column('uuid')
+  vless: string;
 
   @Column('bigint')
   telegramId: number;
@@ -29,7 +27,6 @@ export class User {
   @Column('simple-json')
   links: string[];
 
-  // ← Here we explicitly tell TypeORM “this is a VARCHAR”
   @Column('varchar', { length: 512, nullable: true })
   subscriptionUrl: string | null;
 
@@ -46,6 +43,7 @@ export class User {
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 
+  /** Связь «один пользователь — много транзакций» */
   @OneToMany(() => Transaction, (tx) => tx.user)
   transactions: Transaction[];
 }

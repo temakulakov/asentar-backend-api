@@ -1,6 +1,24 @@
+import { IsString, IsInt, IsEnum } from 'class-validator';
+import { PaymentPeriod } from '../enums/payment-period.enum';
+
 export class CreatePaymentDto {
-  userId: string;
+  /** Username в вашей системе */
+  @IsString()
+  username: string;
+
+  /** Сумма платежа */
+  @IsInt()
   amount: number;
-  currency?: string;
-  // дополнительные поля, например planId, duration и т.п.
+
+  /** Валюта, например "RUB" */
+  @IsString()
+  currency: string;
+
+  /** Период продления (day, week, month, quarter, semiannual, annual) */
+  @IsEnum(PaymentPeriod)
+  period: PaymentPeriod;
+
+  /** 🔐 Обязательная зашифрованная криптограмма карты */
+  @IsString()
+  cardCryptogramPacket: string;
 }

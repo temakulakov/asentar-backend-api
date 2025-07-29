@@ -1,27 +1,22 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { IPaymentService } from '../interfaces/payment-service.interface';
-import { CreatePaymentDto } from '../dto/create-payment.dto';
-import { Transaction } from '../entities/transaction.entity';
-import { Repository } from 'typeorm';
-import { InjectRepository } from '@nestjs/typeorm';
+import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
-import { AxiosResponse } from 'axios';
+import { ConfigService } from '@nestjs/config';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 
-interface CloudPaymentsResponse {
-  Model?: { Receipt?: { Status: string } };
-  Success?: boolean;
-
-  [key: string]: any;
-}
+import { Transaction } from '../entities/transaction.entity';
+import { TransactionStatus } from '../enums/transaction-status.enum';
+import { PaymentPeriod } from '../enums/payment-period.enum';
+import { CreatePaymentDto } from '../dto/create-payment.dto';
+import { User } from '../../users/entities/user.entity';
+import { WebhookPaymentDto } from '../dto/webhook-payment.dto';
 
 @Injectable()
-export class CloudPaymentsService implements IPaymentService {
-  private readonly apiUrl = 'https://api.cloudpayments.ru';
+export class CloudPaymentsService {
+  private readonly apiUrl: string;
   private readonly publicId: string;
-  private readonly apiSecret: string;
-  private readonly logger = new Logger(CloudPaymentsService.name);
+  private readonly secretKey: string;
 
   constructor(
     private readonly http: HttpService,
@@ -29,48 +24,111 @@ export class CloudPaymentsService implements IPaymentService {
     @InjectRepository(Transaction)
     private readonly txRepo: Repository<Transaction>,
   ) {
-    const pub = this.config.get<string>('CLOUDPAYMENTS_PUBLIC_ID');
-    const sec = this.config.get<string>('CLOUDPAYMENTS_API_SECRET');
-    if (!pub || !sec) {
-      throw new Error('CloudPayments credentials are not set in config');
+    this.publicId = this.config.getOrThrow('CLOUDPAYMENTS_PUBLIC_ID');
+    this.secretKey = this.config.getOrThrow('CLOUDPAYMENTS_API_SECRET');
+    this.apiUrl =
+      this.config.get<string>('CLOUDPAYMENTS_API_URL') ||
+      'https://api.cloudpayments.ru';
+  }
+
+  /**
+   * Инициация платежа через CloudPayments
+   * @returns URL для редиректа на платежную форму (3DS или всплывающее окно)
+   */
+  async createInvoice(dto: CreatePaymentDto): Promise<string> {
+    const { username, amount, currency, period, cardCryptogramPacket } = dto;
+
+    let resp;
+    try {
+      resp = await firstValueFrom(
+        this.http.post(
+          `${this.apiUrl}/payments/cards/charge`,
+          {
+            publicId: this.publicId,
+            amount,
+            currency,
+            invoiceId: `${username}-${Date.now()}`,
+            description: `VPN на ${period}`,
+            jsonData: { username, period },
+            cardCryptogramPacket, // ← здесь передаём криптограмм‑пакет
+          },
+          {
+            auth: {
+              username: this.publicId,
+              password: this.secretKey,
+            },
+          },
+        ),
+      );
+    } catch (err) {
+      throw new HttpException(
+        'CloudPayments init failed',
+        HttpStatus.BAD_GATEWAY,
+      );
     }
-    this.publicId = pub;
-    this.apiSecret = sec;
-  }
 
-  async createPayment(dto: CreatePaymentDto): Promise<Transaction> {
-    // вызов CloudPayments Init
-    const request$ = this.http.post<CloudPaymentsResponse>(
-      `${this.apiUrl}/payments/charge`,
-      {
-        Amount: dto.amount,
-        Currency: dto.currency || 'RUB',
-        AccountId: dto.userId,
-        Description: `Оплата подписки на 1 неделю`,
-      },
-      {
-        auth: { username: this.publicId, password: this.apiSecret },
-      },
-    );
-    const response: AxiosResponse<CloudPaymentsResponse> =
-      await firstValueFrom(request$);
-    const data = response.data;
+    // CloudPayments в зависимости от сценария возвращает в модели поле ConfirmationUrl или AcsUrl
+    const model = resp.data?.Model || resp.data?.model;
+    const url =
+      model?.ConfirmationUrl ||
+      model?.confirmationUrl ||
+      model?.AcsUrl ||
+      model?.acsUrl;
 
-    // сохраняем транзакцию
-    const status =
-      data.Model?.Receipt?.Status ?? (data.Success ? 'Completed' : 'Failed');
+    if (typeof url !== 'string') {
+      // Логируем для себя «сырые» данные, чтобы понять, что вернулось
+      console.debug('CloudPayments response model:', model);
+      throw new HttpException(
+        'Invalid confirmation URL',
+        HttpStatus.BAD_GATEWAY,
+      );
+    }
+
+    // Сохраняем PENDING‑транзакцию
     const tx = this.txRepo.create({
-      user: { vless: dto.userId } as any,
-      amount: dto.amount,
-      currency: dto.currency || 'RUB',
-      status,
-      metadata: data,
+      user: { username } as any,
+      amount,
+      currency,
+      period,
+      metadata: {}, // при желании сюда можно положить дополнительные данные
+      status: TransactionStatus.PENDING,
     });
-    return this.txRepo.save(tx);
+    await this.txRepo.save(tx);
+
+    return url;
   }
 
-  async handleCallback(payload: any): Promise<void> {
-    // TODO: verify signature, обновить статус транзакции, продлить подписку
-    this.logger.debug('Callback payload received', payload);
+  /**
+   * Вебхук от CloudPayments (3DS или оплата сразу)
+   */
+  async handleWebhook(
+    dto: WebhookPaymentDto, // вместо payload: any
+    signature: string, // string и так типизирован
+  ): Promise<void> {
+    // TODO: добавить проверку подписи HMAC‑SHA256
+    const { Status, JsonData } = dto.Payload;
+    const { username, period } = JsonData;
+
+    // Ищем PENDING‑транзакцию
+    const tx = await this.txRepo.findOne({
+      where: {
+        user: { username } as User, // тип User
+        period,
+        status: TransactionStatus.PENDING,
+      },
+      relations: ['user'], // если нужно подтянуть связь
+    });
+    if (!tx) {
+      throw new HttpException('Transaction not found', HttpStatus.NOT_FOUND);
+    }
+
+    // Обновляем статус
+    tx.status =
+      Status === TransactionStatus.COMPLETED
+        ? TransactionStatus.COMPLETED
+        : TransactionStatus.FAILED;
+    await this.txRepo.save(tx);
+
+    // TODO: после COMPLETED эмитить событие или вызвать UsersService.extendExpire()
   }
 }

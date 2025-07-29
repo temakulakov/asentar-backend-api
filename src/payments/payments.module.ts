@@ -1,28 +1,26 @@
+// src/payments/payments.module.ts
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
+import { HttpModule } from '@nestjs/axios';
 import { ConfigModule } from '@nestjs/config';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+
 import { Transaction } from './entities/transaction.entity';
-import { User } from '../users/entities/user.entity';
 import { CloudPaymentsService } from './services/cloud-payments.service';
 import { PaymentService } from './services/payment.service';
-import { PaymentsController } from './payments.controller';
-import { HttpModule } from '@nestjs/axios';
+import { PaymentsController } from './controllers/payments.controller';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
     ConfigModule,
     HttpModule,
-    TypeOrmModule.forFeature([Transaction, User]),
+    TypeOrmModule.forFeature([Transaction]),
+    EventEmitterModule, // чтобы провайдеры могли получать emitter
+    UsersModule,
   ],
+  providers: [CloudPaymentsService, PaymentService],
   controllers: [PaymentsController],
-  providers: [
-    PaymentService,
-    {
-      provide: 'PAYMENT_SERVICE',
-      useClass: CloudPaymentsService,
-    },
-    CloudPaymentsService,
-  ],
   exports: [PaymentService],
 })
 export class PaymentsModule {}
