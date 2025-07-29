@@ -2,7 +2,7 @@ import { lastValueFrom, Observable } from 'rxjs';
 
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
-import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
+import { HttpException, HttpStatus, Injectable, Logger } from '@nestjs/common';
 
 import { AxiosResponse, isAxiosError } from 'axios';
 
@@ -76,6 +76,8 @@ export class MarzbanService {
       on_hold_expire_duration: dto.on_hold_expire_duration,
     };
 
+    Logger.debug(body);
+
     return this.call(() =>
       this.http.post<CreateUserIntegrationResDto, CreateUserIntegrationReqDto>(
         `${this.base}/user`,
@@ -102,6 +104,8 @@ export class MarzbanService {
     username: string,
     dto: ModifyUserIntegrationReqDto,
   ): Promise<BaseUserDto> {
+    Logger.debug(username);
+    Logger.debug(dto);
     return this.call(() =>
       this.http.put<BaseUserDto, ModifyUserIntegrationReqDto>(
         `${this.base}/user/${encodeURIComponent(username)}`,

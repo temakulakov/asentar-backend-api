@@ -12,11 +12,13 @@ import { Transaction } from '../../payments/entities/transaction.entity';
 
 @Entity({ name: 'users' })
 export class User {
-  @PrimaryColumn('uuid')
+  @Column('uuid')
   vless: string;
 
-  @Column('uuid', { unique: true })
+  @PrimaryColumn('uuid', { unique: true })
   username: string;
+
+  /** --- Telegram User --- **/
 
   @Column('bigint')
   telegramId: number;

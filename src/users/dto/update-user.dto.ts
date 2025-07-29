@@ -13,6 +13,7 @@ export class UpdateUserDto {
   telegramId?: number;
 
   /** Fields to sync back to Marzban if you like */
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsInt()

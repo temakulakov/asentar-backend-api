@@ -32,18 +32,18 @@ export class UsersController {
     return plainToInstance(UserResponseDto, all);
   }
 
-  @Get(':vless')
-  async findOne(@Param('vless') vless: string): Promise<UserResponseDto> {
-    const user = await this.svc.findOne(vless);
+  @Get(':username')
+  async findOne(@Param('username') username: string): Promise<UserResponseDto> {
+    const user = await this.svc.findOne(username);
     return plainToInstance(UserResponseDto, user);
   }
 
-  @Put(':vless')
+  @Put(':username')
   async update(
-    @Param('vless') vless: string,
+    @Param('username') username: string,
     @Body() dto: UpdateUserDto,
   ): Promise<UserResponseDto> {
-    const user = await this.svc.update(vless, dto);
+    const user = await this.svc.update(username, dto);
     return plainToInstance(UserResponseDto, user);
   }
 

@@ -1,5 +1,5 @@
 import {
-  IsUUID,
+  // IsUUID,
   IsInt,
   IsOptional,
   IsEnum,
@@ -14,7 +14,7 @@ import {
 
 export class CreateUserDto {
   @ApiProperty({ description: 'UUID username for both local & Marzban' })
-  @IsUUID()
+  @IsString()
   username: string;
 
   @ApiProperty({ description: 'Telegram numeric ID' })

@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 
 import { Repository } from 'typeorm';
 import { MarzbanService } from '../marzban/marzban.service';
@@ -8,6 +14,8 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { User } from './entities/user.entity';
 import { InjectRepository } from '@nestjs/typeorm';
 import { FixedInboundsDto } from '../marzban/dto/integration/user-create.integration.req.dto';
+import { ModifyUserIntegrationReqDto } from '../marzban/dto/integration/user-modify.integration.req.dto';
+import { BaseUserDto } from '../marzban/dto/base/user-base.dto';
 
 @Injectable()
 export class UsersService {
@@ -24,7 +32,9 @@ export class UsersService {
       inbounds: new FixedInboundsDto(),
 
       username: dto.username,
-      expire: dto.expire,
+      expire: dto.expire
+        ? dto.expire
+        : Math.floor((Date.now() + 24 * 60 * 60 * 1000) / 1000),
       data_limit: dto.data_limit,
       data_limit_reset_strategy: dto.data_limit_reset_strategy,
       status: dto.status,
@@ -32,6 +42,8 @@ export class UsersService {
       on_hold_timeout: dto.on_hold_timeout,
       on_hold_expire_duration: dto.on_hold_expire_duration,
     });
+
+    Logger.debug(integ);
 
     // 2) map to local entity
     const user = this.repo.create({
@@ -52,33 +64,75 @@ export class UsersService {
     return this.repo.find();
   }
 
-  async findOne(vless: string): Promise<User> {
-    const u = await this.repo.findOne({ where: { vless } });
-    if (!u) throw new NotFoundException(`User ${vless} not found`);
+  async findOne(username: string): Promise<User> {
+    const u = await this.repo.findOne({ where: { username } });
+    if (!u) throw new NotFoundException(`User ${username} not found`);
     return u;
   }
 
-  async update(vless: string, dto: UpdateUserDto): Promise<User> {
-    const user = await this.findOne(vless);
+  async update(username: string, dto: UpdateUserDto): Promise<User> {
+    // 1) Найти локального пользователя
+    const user = await this.repo.findOne({ where: { username } });
+    if (!user) {
+      throw new NotFoundException(`User ${username} not found`);
+    }
 
-    // optionally sync back to Marzban:
-    const needsMarzban: Partial<UpdateUserDto> = {};
-    for (const k of [
+    // 2) Подготовить payload для Marzban (только согласованные поля)
+    type SyncKey = keyof ModifyUserIntegrationReqDto;
+    const syncKeys: SyncKey[] = [
       'expire',
       'data_limit',
       'data_limit_reset_strategy',
       'status',
       'on_hold_timeout',
       'on_hold_expire_duration',
-    ] as const) {
-      if (dto[k] !== undefined) (needsMarzban as any)[k] = dto[k];
-    }
-    if (Object.keys(needsMarzban).length) {
-      await this.marzban.update(user.username, needsMarzban as any);
+    ];
+    const marzbanPayload: ModifyUserIntegrationReqDto = {};
+    for (const key of syncKeys) {
+      const val = (dto as any)[key];
+      if (val !== undefined) {
+        marzbanPayload[key] = val;
+      }
     }
 
-    // merge local changes
-    Object.assign(user, dto);
+    let updatedRemote: BaseUserDto | null = null;
+    if (Object.keys(marzbanPayload).length > 0) {
+      try {
+        updatedRemote = await this.marzban.update(username, marzbanPayload);
+        Logger.debug(`Marzban update succeeded for ${username}`);
+      } catch (error) {
+        Logger.error(
+          `Marzban service error for ${username}`,
+          error.stack || error.message,
+        );
+        // Если это внешняя ошибка (HTTP 4xx/5xx) – пробросим её
+        if (error instanceof HttpException) {
+          throw error;
+        }
+        // Иначе – сеть/таймаут => 500 Internal Server Error
+        throw new HttpException(
+          'Marzban API unreachable',
+          HttpStatus.INTERNAL_SERVER_ERROR,
+        );
+      }
+    }
+
+    // 3) Синхронизировать поля из ответа Marzban
+    if (updatedRemote) {
+      if (typeof updatedRemote.expire === 'number') {
+        user.expireDate = new Date(updatedRemote.expire * 1000);
+      }
+      if (updatedRemote.status) {
+        user.status = updatedRemote.status;
+      }
+    }
+
+    // 4) Обновить локальные поля из DTO
+    if (dto.telegramId !== undefined) {
+      user.telegramId = dto.telegramId;
+    }
+
+    // 5) Сохранить изменения
     return this.repo.save(user);
   }
 
