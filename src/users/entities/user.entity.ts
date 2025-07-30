@@ -18,7 +18,7 @@ export class User {
   @Column('uuid')
   vless: string;
 
-  @Column('bigint')
+  @Column('bigint', { unique: true })
   telegramId: number;
 
   @Column('datetime')
@@ -43,7 +43,11 @@ export class User {
   @UpdateDateColumn({ name: 'updated_at' })
   updatedAt: Date;
 
-  /** Связь «один пользователь — много транзакций» */
+  /** Связь «один пользователь — много транзакций» */
   @OneToMany(() => Transaction, (tx) => tx.user)
   transactions: Transaction[];
+
+  /** Новое поле — роли пользователя (пару примеров: 'admin','user') */
+  @Column('simple-array', { nullable: true })
+  roles: string[];
 }

@@ -71,6 +71,12 @@ export class UsersService {
     return u;
   }
 
+  async findOneByTg(telegramId: number): Promise<User> {
+    const u = await this.repo.findOne({ where: { telegramId } });
+    if (!u) throw new NotFoundException(`User ${telegramId} not found`);
+    return u;
+  }
+
   async extendExpire(username: string, period: PaymentPeriod): Promise<void> {
     const user = await this.repo.findOne({ where: { username } });
     if (!user) throw new NotFoundException(`User ${username} not found`);
